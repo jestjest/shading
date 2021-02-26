@@ -145,7 +145,6 @@ void main(void)
 
        // replace this line with your implementation
 
-
         vec3 texture_value = texture(normalTextureSampler, texcoord).rgb;
         vec3 tangent_space_normal = texture_value * 2.0 - 1.0;
         N = normalize(tan2world * tangent_space_normal);

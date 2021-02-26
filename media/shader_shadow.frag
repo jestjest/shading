@@ -13,7 +13,9 @@ uniform bool useMirrorBRDF;         // true if mirror brdf should be used (defau
 //
 
 uniform sampler2D diffuseTextureSampler;
-
+uniform sampler2D normalTextureSampler;
+uniform sampler2D environmentTextureSampler;
+uniform sampler2DArray shadowTextureArray;
 
 //
 // lighting environment definition. Scenes may contain directional
@@ -33,7 +35,6 @@ uniform vec3  spot_light_directions[MAX_NUM_LIGHTS];
 uniform vec3  spot_light_intensities[MAX_NUM_LIGHTS];
 uniform float spot_light_angles[MAX_NUM_LIGHTS];
 
-
 //
 // material-specific uniforms
 //
@@ -49,10 +50,12 @@ in vec2 texcoord;     // surface texcoord (uv)
 in vec3 dir2camera;   // vector from surface point to camera
 in mat3 tan2world;    // tangent space to world space transform
 in vec3 vertex_diffuse_color; // surface color
+in vec4 light_space_positions[MAX_NUM_LIGHTS];
 
 out vec4 fragColor;
 
 #define PI 3.14159265358979323846
+#define SMOOTHING 0.1
 
 
 //
@@ -78,8 +81,17 @@ vec3 Phong_BRDF(vec3 L, vec3 V, vec3 N, vec3 diffuse_color, vec3 specular_color,
     // TODO CS248: Phong Reflectance
     // Implement diffuse and specular terms of the Phong
     // reflectance model here.
-
-    return diffuse_color;
+    vec3 reflectance = vec3(0.0);
+    float LN = dot(L, N);
+    if (LN > 0.) {
+        reflectance += diffuse_color * LN;
+        vec3 R = (2 * dot(L, N) * N) - L;
+        float RV = dot(R, V);
+        if (RV > 0.) {
+            reflectance += specular_color * pow(RV, specular_exponent);
+        }
+    }
+    return reflectance;
 }
 
 //
@@ -105,7 +117,10 @@ vec3 SampleEnvironmentMap(vec3 D)
     // (3) How do you convert theta and phi to normalized texture
     //     coordinates in the domain [0,1]^2?
 
-    return vec3(.25, .25, .25);   
+    float phi = atan(D[0], D[2]);
+    float theta = acos(D[1]);
+    vec2 coords = vec2((phi / (2 * PI)) + 0.5, theta / PI);
+    return texture(environmentTextureSampler, coords).rgb;
 }
 
 //
@@ -142,7 +157,9 @@ void main(void)
        // In other words:   tangent_space_normal = texture_value * 2.0 - 1.0;
 
        // replace this line with your implementation
-       N = normalize(normal);
+        vec3 texture_value = texture(normalTextureSampler, texcoord).rgb;
+        vec3 tangent_space_normal = texture_value * 2.0 - 1.0;
+        N = normalize(tan2world * tangent_space_normal);
 
     } else {
        N = normalize(normal);
@@ -161,8 +178,7 @@ void main(void)
         // compute perfect mirror reflection direction here.
         // You'll also need to implement environment map sampling in SampleEnvironmentMap()
         //
-        vec3 R = normalize(vec3(1.0));
-
+        vec3 R = -V + (2 * max(dot(V, N), 0.) * N);
 
         // sample environment map
         vec3 envColor = SampleEnvironmentMap(R);
@@ -228,19 +244,53 @@ void main(void)
         //
         //    -- The reference solution uses SMOOTHING = 0.1, so 20% of the spotlight region is the smoothly
         //       facing out area.  Smaller values of SMOOTHING will create hard spotlights.
-
         // CS248: remove this once you perform proper attenuation computations
-        intensity = vec3(0.5, 0.5, 0.5);
+        float D = length(dir_to_surface);
+        intensity = intensity / (1 + pow(D, 2));
 
+        float max_angle = (1.0 + SMOOTHING) * cone_angle;
+        float min_angle = (1.0 - SMOOTHING) * cone_angle;
+
+        if (angle > max_angle) {
+            intensity = vec3(0.);
+        }
+        else if (angle < min_angle) { }
+        else {
+            intensity = intensity * ((angle - max_angle) / (min_angle - max_angle));
+        }
 
         // Render Shadows for all spot lights
         // CS248 TODO: Shadow Mapping: comute shadowing for spotlight i here 
 
+        vec3 shadow_uvw = ((light_space_positions[i].xyz / light_space_positions[i].w) + 1) / 2.;
+        // float depth = texture(shadowTextureArray, vec3(shadow_uvw.xy, i)).x; // Using the ith layer
+        // float currentDepth = shadow_uvw.z;
+        // float bias = 0.005;
+        // bool shadow = currentDepth - bias > depth;
+        // if (!shadow) {
+        //     vec3 L = normalize(-spot_light_directions[i]);
+        //     vec3 brdf_color = Phong_BRDF(L, V, N, diffuseColor, specularColor, specularExponent);
+        //     Lo += intensity * brdf_color;
+        // }
 
-	    vec3 L = normalize(-spot_light_directions[i]);
-		vec3 brdf_color = Phong_BRDF(L, V, N, diffuseColor, specularColor, specularExponent);
-
-	    Lo += intensity * brdf_color;
+        int total_shadow = 0;
+        float currentDepth = shadow_uvw.z; // Use same depth for all samples?
+        float pcf_step_size = 324;
+        for (int j=-2; j<=2; j++) {
+            for (int k=-2; k<=2; k++) {
+                vec2 offset = vec2(j,k) / pcf_step_size;
+                vec2 shadow_uv = shadow_uvw.xy + offset;
+                float depth = texture(shadowTextureArray, vec3(shadow_uv, i)).x; // Using the ith layer
+                float bias = 0.005;
+                if (currentDepth - bias > depth) {
+                    total_shadow += 1;
+                }
+            }
+        }
+        float shadow_percent = total_shadow / 25.0;
+        vec3 L = normalize(-spot_light_directions[i]);
+        vec3 brdf_color = Phong_BRDF(L, V, N, diffuseColor, specularColor, specularExponent);
+        Lo += (1-shadow_percent) * intensity * brdf_color;
     }
 
     fragColor = vec4(Lo, 1);

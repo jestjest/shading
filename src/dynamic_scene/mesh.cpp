@@ -361,7 +361,12 @@ void Mesh::internalDraw(bool shadowPass, const Matrix4x4& worldToNDC) const {
         // In this way, the shader can compute the texture coordinate to sample from the
         // Shadow Map given any point on the object.
         // For examples of passing arrays to the shader, look below for "directional_light_vectors[]" etc.
-
+    	shader_->setScalarParameter("num_shadowed_lights", numShadowedLights);
+        for (int j=0; j < numShadowedLights; j++) {
+            string varname = "world_to_shadow_light[" + std::to_string(j) + "]";
+            const Matrix4x4 worldToShadowLight = scene_->getWorldToShadowLight(j);
+            shader_->setMatrixParameter(varname, worldToShadowLight);
+        }
 
 		checkGLError("after bind uniforms, about to bind textures");
 
@@ -387,7 +392,7 @@ void Mesh::internalDraw(bool shadowPass, const Matrix4x4& worldToNDC) const {
         // You want to pass the array of shadow textures computed during shadow pass into the shader program.
         // See Scene::visualizeShadowMap for an example of passing texture arrays.
         // See shadow_viz.frag for an example of using texture arrays in the shader.
-
+		shader_->setTextureArraySampler("shadowTextureArray", scene_->getShadowTextureArrayId());
 
         // bind light parameters //////////////////////////////////
 

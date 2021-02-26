@@ -3,6 +3,8 @@ uniform mat4 obj2world;                 // object to world space transform
 uniform int  num_spot_lights;
 #define MAX_NUM_LIGHTS 10
 
+uniform int num_shadowed_lights;
+uniform mat4 world_to_shadow_light[MAX_NUM_LIGHTS];
 
 uniform mat3 obj2worldNorm;             // object to world transform for normals
 uniform vec3 camera_position;           // world space camera position           
@@ -24,6 +26,7 @@ out vec2 texcoord;
 out vec3 dir2camera;                // world space vector from surface point to camera
 out vec3 normal;
 out mat3 tan2world;                 // tangent space rotation matrix multiplied by obj2WorldNorm
+out vec4 light_space_positions[MAX_NUM_LIGHTS];
 
 void main(void)
 {
@@ -40,6 +43,9 @@ void main(void)
     //
     // Recall for shadow mapping we need to know the position of the surface relative
     // to each shadowed light source.
+    for (int i = 0; i < num_shadowed_lights; i++) {
+        light_space_positions[i] = world_to_shadow_light[i] * (obj2world * vec4(vtx_position, 1));
+    }
 
 
     // TODO CS248 Normal Mapping: compute 3x3 tangent space to world space matrix here: tan2world
@@ -55,6 +61,12 @@ void main(void)
     // (3) obj2worldNorm is a 3x3 matrix transforming object space normals to world space normals
     // compute tangent space to world space matrix
 
+    vec3 a = normalize(vtx_tangent);
+    vec3 b = normalize(cross(vtx_normal, vtx_tangent));
+    vec3 c = normalize(vtx_normal);
+    mat4 tan2obj = mat4(mat3(a, b, c));
+    tan2world = mat3(obj2world * tan2obj);
+ 
     normal = obj2worldNorm * vtx_normal;
 
     vertex_diffuse_color = vtx_diffuse_color;
