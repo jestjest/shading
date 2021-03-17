@@ -29,15 +29,16 @@ class Mesh : public SceneObject {
     Mesh(Collada::PolymeshInfo& polyMesh, const Matrix4x4& transform);
     ~Mesh();
 
-    void draw(const Matrix4x4& worldToNDC) const override;
-    void drawShadow(const Matrix4x4& worldToNDC) const override;
+    void draw(const Matrix4x4& proj, const Matrix4x4& worldToCamera) const override;
+    void drawShadow(const Matrix4x4& proj, const Matrix4x4& worldToCamera) const override;
+    void drawSSAO(const Matrix4x4& proj, const Matrix4x4& worldToCamera) const override;
     BBox getBBox() const override;
     void reloadShaders() override;
 
  private:
 
     // Helper called by draw() and drawShadow()
-    void internalDraw(bool shadowPass, const Matrix4x4& worldToNDC) const;
+    void internalDraw(bool shadowPass, bool ssao, const Matrix4x4& proj, const Matrix4x4& worldToCamera) const;
       
     int numTriangles_;
 
@@ -67,6 +68,8 @@ class Mesh : public SceneObject {
     TextureId diffuseTextureId_;
     TextureId normalTextureId_;
     TextureId environmentTextureId_;
+
+    std::vector<Vector3D> ssaoKernel_;
 
     // will be passed as shader uniforms
     bool  doTextureMapping_;

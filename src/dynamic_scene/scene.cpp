@@ -130,6 +130,30 @@ Scene::Scene(std::vector<SceneObject*> argObjects,
         // }
     }
 
+    doSSAO_ = false;
+
+    // view position for ssao
+    checkGLError("pre ssao view position fb setup");
+    printf("Setting up ssao assets \n");
+    viewTextureSize_ = 1024;
+    gl_mgr_ = GLResourceManager::instance();
+    viewPosBuffer_ = gl_mgr_->createFrameBuffer();
+    checkGLError("after creating viewpos framebuffer");
+    viewPosTextureId_ = gl_mgr_->createDepthTextureFromFrameBuffer(viewPosBuffer_, viewTextureSize_);
+    checkGLError("after binding viewpos texture as attachment");
+    if (!gl_mgr_->checkFrameBuffer(viewPosBuffer_)) {
+        exit(1);
+    }
+    printf("Done setting up viewpos assets\n");
+    checkGLError("post viewpos setup");
+    printf("Creating viewpos shader\n");
+    // create shader object for view geometry
+    string sepchar("/");
+    ssaoViewShader_ = new Shader(baseShaderDir + sepchar + "viewpos.vert",
+                                 baseShaderDir + sepchar + "viewpos.frag");
+    checkGLError("post viewpos shader compile");
+    printf("Viewpos shader created.\n");
+
     // the following code creates frame buffer objects to render shadows
 
     checkGLError("pre shadow fb setup");
@@ -191,6 +215,7 @@ Scene::Scene(std::vector<SceneObject*> argObjects,
         printf("Shaders created.\n");
     }
 
+
     checkGLError("returning from Scene::Scene");  
 }
 
@@ -219,6 +244,7 @@ void Scene::reloadShaders() {
     // where shader program bindings are changed.  Fix this later.  We may not need it at all.
     glUseProgram(0);
 
+    ssaoViewShader_->reload();
 
     if (getNumShadowedLights() > 0) {
       shadowShader_->reload();
@@ -237,13 +263,32 @@ void Scene::render() {
 
     Matrix4x4 worldToCamera = createWorldToCameraMatrix(camera_->getPosition(), camera_->getViewPoint(), camera_->getUpDir());
     Matrix4x4 proj = createPerspectiveMatrix(camera_->getVFov(), camera_->getAspectRatio(), camera_->getNearClip(), camera_->getFarClip());  
-    Matrix4x4 worldToCameraNDC = proj * worldToCamera;
 
     for (SceneObject *obj : objects_)
-        obj->draw(worldToCameraNDC);
+        obj->draw(proj, worldToCamera);
 
     checkGLError("end Scene::render");
 
+}
+
+void Scene::ssaoPass() {
+    checkGLError("begin Scene::ssaoPass");
+
+    Matrix4x4 worldToCamera = createWorldToCameraMatrix(camera_->getPosition(), camera_->getViewPoint(), camera_->getUpDir());
+    Matrix4x4 proj = createPerspectiveMatrix(camera_->getVFov(), camera_->getAspectRatio(), camera_->getNearClip(), camera_->getFarClip());  
+
+    auto fb_bind = gl_mgr_->bindFrameBuffer(viewPosBuffer_);
+
+    glViewport(0, 0, viewTextureSize_, viewTextureSize_);
+
+    glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+
+    // Now draw all the objects in the scene
+    for (SceneObject *obj : objects_)
+        obj->drawSSAO(proj, worldToCamera);
+
+    checkGLError("end ssao pass");
 }
 
 void Scene::renderShadowPass(int shadowedLightIndex) {
@@ -308,7 +353,7 @@ void Scene::renderShadowPass(int shadowedLightIndex) {
 
     // Now draw all the objects in the scene
     for (SceneObject *obj : objects_)
-        obj->drawShadow(worldToLightNDC);
+        obj->drawShadow(proj, worldToCamera);
 
     checkGLError("end shadow pass");
     

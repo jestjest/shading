@@ -1,3 +1,5 @@
+uniform mat4 w2c;                 // object to world space transform
+uniform mat4 p;                       // proj Matrix
 //
 // Parameters that control fragment shader behavior. Different materials
 // will set these flags to true/false for different looks
@@ -7,6 +9,7 @@ uniform bool useTextureMapping;     // true if basic texture mapping (diffuse) s
 uniform bool useNormalMapping;      // true if normal mapping should be used
 uniform bool useEnvironmentMapping; // true if environment mapping should be used
 uniform bool useMirrorBRDF;         // true if mirror brdf should be used (default: phong)
+uniform bool doSSAO;
 
 //
 // texture maps
@@ -16,6 +19,13 @@ uniform sampler2D diffuseTextureSampler;
 uniform sampler2D normalTextureSampler;
 uniform sampler2D environmentTextureSampler;
 uniform sampler2DArray shadowTextureArray;
+uniform sampler2D viewPosTextureSampler;
+
+// ssao samples
+uniform vec3 samples[300];
+int kernelSize = 300;
+float radius = 0.5;
+float bias = 0.025;
 
 //
 // lighting environment definition. Scenes may contain directional
@@ -128,6 +138,38 @@ vec3 SampleEnvironmentMap(vec3 D)
 //
 void main(void)
 {
+    // Calculate ambient occlusion
+    float ambientOcclusion = 0.0;
+    if (doSSAO) {
+        vec4 viewPos = w2c * vec4(position, 1.0);
+        vec3 vp3 = viewPos.xyz / viewPos.w;
+        // iterate over the sample kernel and calculate occlusion factor
+        for (int i = 0; i < kernelSize; ++i) {
+            // get sample position
+            vec4 samplePos = w2c * vec4(tan2world * samples[i], 1.0); // from tangent to view-space
+            vec3 sp3 = samplePos.xyz / samplePos.w;
+            sp3 = vp3 + sp3 * radius; 
+            
+            // project sample position (to sample texture) (to get position on screen/texture)
+            vec4 offset = p * vec4(sp3, 1.0); // from view to clip-space
+            offset /= offset.w; // perspective divide
+            offset.xyz = offset.xyz * 0.5 + 0.5; // transform to range 0.0 - 1.0
+            
+            // get sample depth
+            float sampleDepth = texture(viewPosTextureSampler, offset.xy).x; // get depth value of kernel sample
+            
+            // range check & accumulate
+            float rangeCheck = smoothstep(0.0, 1.0, radius / abs(vp3.z - sampleDepth));
+            ambientOcclusion += (sampleDepth >= samplePos.z + bias ? 1.0 : 0.0) * rangeCheck;           
+
+            // float rangeCheck= abs(pvp3.z - sampleDepth) < radius ? 1.0 : 0.0;
+            // ambientOcclusion += (sampleDepth <= offset.z + bias ? 1.0 : 0.0) * rangeCheck;
+        }
+        ambientOcclusion = 1.0 - (ambientOcclusion / kernelSize);
+        ambientOcclusion = normalize(vec4(ambientOcclusion, 0 , 0, 1)).x;
+    } else {
+        ambientOcclusion = 1.0;
+    }
 
     //////////////////////////////////////////////////////////////////////////
 	// Pattern generation. Compute parameters to BRDF 
@@ -166,7 +208,7 @@ void main(void)
     }
 
     vec3 V = normalize(dir2camera);
-    vec3 Lo = vec3(0.1 * diffuseColor);   // this is ambient
+    vec3 Lo = vec3(0.3 * diffuseColor * ambientOcclusion);   // this is ambient
 
     /////////////////////////////////////////////////////////////////////////
     // Phase 2: Evaluate lighting and surface BRDF 
@@ -263,16 +305,6 @@ void main(void)
         // CS248 TODO: Shadow Mapping: comute shadowing for spotlight i here 
 
         vec3 shadow_uvw = ((light_space_positions[i].xyz / light_space_positions[i].w) + 1) / 2.;
-        // float depth = texture(shadowTextureArray, vec3(shadow_uvw.xy, i)).x; // Using the ith layer
-        // float currentDepth = shadow_uvw.z;
-        // float bias = 0.005;
-        // bool shadow = currentDepth - bias > depth;
-        // if (!shadow) {
-        //     vec3 L = normalize(-spot_light_directions[i]);
-        //     vec3 brdf_color = Phong_BRDF(L, V, N, diffuseColor, specularColor, specularExponent);
-        //     Lo += intensity * brdf_color;
-        // }
-
         int total_shadow = 0;
         float currentDepth = shadow_uvw.z; // Use same depth for all samples?
         float pcf_step_size = 324;

@@ -110,6 +110,13 @@ void Application::render() {
     if (discoModeOn) {
       scene->rotateSpotLights();
     }
+
+    // pass 0.5, do ssao view preprocessing
+    checkGLError("pre ssao pass");
+    if (scene->doSSAO()) {
+      scene->ssaoPass();
+    }
+
     // pass 1, generate shadow map for the spotlights
 
     if (scene->needsShadowPass()) {
@@ -357,6 +364,8 @@ void Application::char_event(unsigned int ch) {
       case 'D':
          discoModeOn = !discoModeOn;
          break;
+      case 'o':
+        scene->setSSAO(!scene->doSSAO());
     }
 }
 

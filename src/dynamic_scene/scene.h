@@ -43,10 +43,12 @@ class SceneObject {
      * Renders the object in OpenGL, assuming that the camera and projection
      * matrices have already been set up.
      */
-    virtual void draw(const Matrix4x4& worldToNDC) const = 0;
+    virtual void draw(const Matrix4x4& proj, const Matrix4x4& worldToCamera) const = 0;
 
     // same as above, but shadow pass form
-    virtual void drawShadow(const Matrix4x4& worldToNDC) const = 0;
+    virtual void drawShadow(const Matrix4x4& proj, const Matrix4x4& worldToCamera) const = 0;
+
+    virtual void drawSSAO(const Matrix4x4& proj, const Matrix4x4& worldToCamera) const = 0;
 
     // reload any shaders associated with object
     virtual void reloadShaders() = 0; 
@@ -138,6 +140,9 @@ class Scene {
      */
     void render();
 
+    // renders ssao pass
+    void ssaoPass();
+
     // renders a shadow pass
     void renderShadowPass(int shadowedLightIndex);
 
@@ -150,6 +155,10 @@ class Scene {
     // true if shadow pass is necessary
     bool needsShadowPass() const { return doShadowPass_; }
 
+    // true if doing ssao 
+    bool doSSAO() const { return doSSAO_; }
+    void setSSAO(bool b) { doSSAO_ = b; }
+
     // "hot" reloads shaders for all scene objects
     void reloadShaders();
 
@@ -159,8 +168,11 @@ class Scene {
      */
     BBox getBBox() const;
 
+    Shader*   getSSAOViewShader() const { return ssaoViewShader_; }
+
     Shader*   getShadowShader() const { return shadowShader_; }
     TextureArrayId getShadowTextureArrayId() const { return shadowDepthTextureArrayId_; }
+    TextureId      getViewPosTextureId() const { return viewPosTextureId_; }
     Matrix4x4 getWorldToShadowLight(int lightid) const { return worldToShadowLight_[lightid]; }
 
     size_t getNumShadowedLights() const;
@@ -190,6 +202,12 @@ class Scene {
     //std::vector<StaticScene::AreaLight*> area_lights;
     //std::vector<StaticScene::SphereLight*> sphere_lights;
     GLResourceManager* gl_mgr_;
+    // screen space frame buffer
+    bool            doSSAO_;
+    FrameBufferId   viewPosBuffer_;
+    int             viewTextureSize_;
+    Shader*         ssaoViewShader_;
+    TextureId       viewPosTextureId_;
     // resources for shadow mapping
     bool            doShadowPass_;
     int             shadowTextureSize_;

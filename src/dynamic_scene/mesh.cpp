@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <sstream>
+#include <random>
 
 #include "../static_scene/object.h"
 #include "../static_scene/light.h"
@@ -16,6 +17,9 @@ using std::ostringstream;
 namespace CS248 {
 namespace DynamicScene {
 
+	float lerp(float a, float b, float f) {
+		return a + f * (b - a);
+	}
 
 Mesh::Mesh(Collada::PolymeshInfo& polyMesh, const Matrix4x4& transform) {
 
@@ -247,6 +251,24 @@ Mesh::Mesh(Collada::PolymeshInfo& polyMesh, const Matrix4x4& transform) {
         doEnvironmentMapping_ = false;
     }
 
+
+    // generate sample kernel
+    // ----------------------
+    std::uniform_real_distribution<GLfloat> randomFloats(0.0, 1.0); // generates random floats between 0.0 and 1.0
+    std::default_random_engine generator;
+    for (unsigned int i = 0; i < 300; ++i)
+    {
+        Vector3D sample(randomFloats(generator) * 2.0 - 1.0, randomFloats(generator) * 2.0 - 1.0, randomFloats(generator));
+        sample.normalize();
+        sample *= randomFloats(generator);
+        float scale = float(i) / 300.0;
+
+        // scale samples s.t. they're more aligned to center of kernel
+        scale = lerp(0.1f, 1.0f, scale * scale);
+        sample *= scale;
+        ssaoKernel_.push_back(sample);
+    }
+
 	//
 	// allocate the shader for this mesh
 	//
@@ -283,18 +305,22 @@ Mesh::~Mesh() {
 /*
  * Draw the mesh
  */
-void Mesh::draw(const Matrix4x4& worldToNDC) const {
-	internalDraw(false, worldToNDC);
+void Mesh::draw(const Matrix4x4& proj, const Matrix4x4& worldToCamera) const {
+	internalDraw(false, false, proj, worldToCamera);
 }
 
 /*
  * Draw the mesh as part of a shadow map generation rendering pass
  */
-void Mesh::drawShadow(const Matrix4x4& worldToNDC) const {
-	internalDraw(true, worldToNDC);
+void Mesh::drawShadow(const Matrix4x4& proj, const Matrix4x4& worldToCamera) const {
+	internalDraw(true, false, proj, worldToCamera);
 }
 
-void Mesh::internalDraw(bool shadowPass, const Matrix4x4& worldToNDC) const {
+void Mesh::drawSSAO(const Matrix4x4 &proj, const Matrix4x4 &worldToCamera) const {
+	internalDraw(false, true, proj, worldToCamera);
+}
+
+void Mesh::internalDraw(bool shadowPass, bool ssao, const Matrix4x4& proj, const Matrix4x4& worldToCamera) const {
 
 	// printf("Top of Mesh::internalDraw  (%lu shadowed lights)\n", scene->getNumShadowedLights());
 
@@ -302,18 +328,31 @@ void Mesh::internalDraw(bool shadowPass, const Matrix4x4& worldToNDC) const {
     
 	Matrix4x4 objectToWorld = getObjectToWorld();
 	Matrix3x3 objectToWorldForNormals = getObjectToWorldForNormals();
-	Matrix4x4 mvp = worldToNDC * objectToWorld;
+	Matrix4x4 mvp = proj * worldToCamera * objectToWorld;
 
 	// cout << "obj2world: " << objectToWorld << endl;
 
 	auto vertex_array_bind = gl_mgr_->bindVertexArray(vertexArrayId_);
 
-    if (shadowPass) {
+	if (ssao) {
+		Shader* viewShader = scene_->getSSAOViewShader();
+    	auto shader_bind = viewShader->bind();
+        viewShader->setMatrixParameter("m", objectToWorld);
+        viewShader->setMatrixParameter("v", worldToCamera);
+        viewShader->setMatrixParameter("p", proj);
+        viewShader->setVertexBuffer("vtx_position", 3, positionBufferId_);
+
+		checkGLError("before glDrawArrays in ssao view pass");
+        glDrawArrays(GL_TRIANGLES, 0, 3 * numTriangles_);
+
+    } else if (shadowPass) {
 
     	Shader* shadowShader = scene_->getShadowShader();
 
     	auto shader_bind = shadowShader->bind();
-        shadowShader->setMatrixParameter("mvp", mvp);
+        shadowShader->setMatrixParameter("m", objectToWorld);
+        shadowShader->setMatrixParameter("v", worldToCamera);
+        shadowShader->setMatrixParameter("p", proj);
         shadowShader->setVertexBuffer("vtx_position", 3, positionBufferId_);
 		shadowShader->setVertexBuffer("vtx_normal", 3, normalBufferId_);
         shadowShader->setMatrixParameter("obj2worldNorm", objectToWorldForNormals);
@@ -329,6 +368,7 @@ void Mesh::internalDraw(bool shadowPass, const Matrix4x4& worldToNDC) const {
 
 		checkGLError("before bind uniforms");
 
+    	shader_->setScalarParameter("doSSAO", scene_->doSSAO() ? 1 : 0);
     	shader_->setScalarParameter("useTextureMapping", doTextureMapping_ ? 1 : 0);
     	shader_->setScalarParameter("useNormalMapping", doNormalMapping_ ? 1 : 0);        
         shader_->setScalarParameter("useEnvironmentMapping", doEnvironmentMapping_ ? 1 : 0);
@@ -344,6 +384,12 @@ void Mesh::internalDraw(bool shadowPass, const Matrix4x4& worldToNDC) const {
         shader_->setMatrixParameter("obj2world", objectToWorld);
 
 		checkGLError("after binding o2w");
+
+        shader_->setMatrixParameter("w2c", worldToCamera);
+
+		checkGLError("after binding w2c");
+        shader_->setMatrixParameter("p", proj);
+		checkGLError("after binding p");
 
         shader_->setMatrixParameter("obj2worldNorm", objectToWorldForNormals);
 
@@ -394,7 +440,12 @@ void Mesh::internalDraw(bool shadowPass, const Matrix4x4& worldToNDC) const {
         // See shadow_viz.frag for an example of using texture arrays in the shader.
 		shader_->setTextureArraySampler("shadowTextureArray", scene_->getShadowTextureArrayId());
 
-        // bind light parameters //////////////////////////////////
+		shader_->setTextureSampler("viewPosTextureSampler", scene_->getViewPosTextureId());
+
+		for (unsigned int i = 0; i < 64; ++i)
+			shader_->setVectorParameter("samples[" + std::to_string(i) + "]", ssaoKernel_[i]);
+
+		// bind light parameters //////////////////////////////////
 
     	shader_->setScalarParameter("num_directional_lights", (int)scene_->getNumDirectionalLights());
         shader_->setScalarParameter("num_point_lights", (int)scene_->getNumPointLights());
