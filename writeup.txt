@@ -1,0 +1,8 @@
+Completed features: all
+  - coordinate transform
+  - phong reflectance
+  - normal mapping
+  - environment lighting
+  - spotlights and shadows
+
+Incomplete features: None
