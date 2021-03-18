@@ -10,7 +10,7 @@ out vec3 normal_vec;
 
 void main() {
    normal_vec = obj2worldNorm * vtx_normal;
-   gl_Position = v * m * vec4(vtx_position, 1);
+   gl_Position = p * v * m * vec4(vtx_position, 1);
 }
 
 

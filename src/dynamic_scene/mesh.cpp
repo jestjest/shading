@@ -255,12 +255,12 @@ Mesh::Mesh(Collada::PolymeshInfo& polyMesh, const Matrix4x4& transform) {
     // generate sample kernel
     std::uniform_real_distribution<GLfloat> randomFloats(0.0, 1.0); // generates random floats between 0.0 and 1.0
     std::default_random_engine generator;
-    for (unsigned int i = 0; i < 300; ++i)
+    for (unsigned int i = 0; i < 600; ++i)
     {
         Vector3D sample(randomFloats(generator) * 2.0 - 1.0, randomFloats(generator) * 2.0 - 1.0, randomFloats(generator));
         sample.normalize();
         sample *= randomFloats(generator);
-        float scale = float(i) / 300.0;
+        float scale = float(i) / 600.0;
 
         // scale samples s.t. they're more aligned to center of kernel
         scale = lerp(0.1f, 1.0f, scale * scale);

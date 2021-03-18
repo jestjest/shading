@@ -23,7 +23,7 @@ uniform sampler2DArray viewPosTextureArray;
 uniform sampler2D ssaoNoiseTextureSampler;
 
 // ssao samples
-uniform vec3 samples[300];
+uniform vec3 samples[600];
 // tile noise texture over screen based on screen dimensions divided by noise size
 const vec2 noiseScale = vec2(600.0/4.0, 600.0/4.0); 
 int kernelSize = 300;
@@ -157,10 +157,10 @@ void main(void)
 
         // iterate over the sample kernel and calculate occlusion factor
         for (int i = 0; i < kernelSize; ++i) {
-            // get sample position
+            // get sample position in viewspace
             vec3 samplePos = TBN * samples[1];// from tangent to view-space
             samplePos = viewPos3 + samplePos * radius; 
-            
+
             // project sample position (to sample texture) (to get position on screen/texture)
             vec4 offset = p * vec4(samplePos, 1.0); // from view to clip-space
             offset /= offset.w; // perspective divide
@@ -168,18 +168,13 @@ void main(void)
             
             // get sample depth
             float sampleDepth = texture(viewPosTextureArray, vec3(offset.xy, 0)).x; // get depth value of kernel sample
-            // fragColor = normalize(vec4(sampleDepth, 0, 0, 1));
-            // return;
             
             // range check & accumulate
-            // float rangeCheck = smoothstep(0.0, 1.0, radius / abs(viewPos3.z - sampleDepth));
-            // ambientOcclusion += (sampleDepth <= samplePos.z + bias ? 1.0 : 0.0) * rangeCheck;           
-
-            float rangeCheck = abs(viewPos3.z - sampleDepth) < radius ? 1.0 : 0.0;
-            ambientOcclusion += (sampleDepth <= samplePos.z + bias ? 1.0 : 0.0) * rangeCheck;
+            float rangeCheck = smoothstep(0.0, 1.0, radius / abs(offset.z - sampleDepth));
+            ambientOcclusion += (sampleDepth <= offset.z + bias ? 1.0 : 0.0) * rangeCheck;           
         }
         ambientOcclusion = 1.0 - (ambientOcclusion / kernelSize);
-        ambientOcclusion = bias + normalize(vec4(ambientOcclusion, 0 , 0, 1)).x;
+        // ambientOcclusion = bias + normalize(vec4(ambientOcclusion, 0 , 0, 1)).x;
 
     } else {
         ambientOcclusion = 1.0;
