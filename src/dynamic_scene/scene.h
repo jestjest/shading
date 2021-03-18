@@ -172,7 +172,7 @@ class Scene {
 
     Shader*   getShadowShader() const { return shadowShader_; }
     TextureArrayId getShadowTextureArrayId() const { return shadowDepthTextureArrayId_; }
-    TextureId      getViewPosTextureId() const { return viewPosTextureId_; }
+    TextureArrayId      getViewPosTextureArrayId() const { return viewPosDepthTextureArrayId_; }
     Matrix4x4 getWorldToShadowLight(int lightid) const { return worldToShadowLight_[lightid]; }
 
     size_t getNumShadowedLights() const;
@@ -204,10 +204,11 @@ class Scene {
     GLResourceManager* gl_mgr_;
     // screen space frame buffer
     bool            doSSAO_;
-    FrameBufferId   viewPosBuffer_;
+    FrameBufferId   viewPosBuffer_[1];
     int             viewTextureSize_;
     Shader*         ssaoViewShader_;
-    TextureId       viewPosTextureId_;
+    TextureArrayId  viewPosDepthTextureArrayId_;
+    TextureArrayId  viewPosColorTextureArrayId_;
     // resources for shadow mapping
     bool            doShadowPass_;
     int             shadowTextureSize_;

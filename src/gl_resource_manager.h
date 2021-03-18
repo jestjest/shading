@@ -63,13 +63,14 @@ class GLResourceManager {
   VertexBufferId createVertexBufferFromData(const float* data, int num);
   // Creates a texture2D by copying the given data buffer of type unsigned char
   TextureId createTextureFromData(const unsigned char* data, int width, int height);
+  // Creates a texture2D by copying the given data buffer of type float
+  TextureId createTextureFromData(const float* data, int width, int height);
   // Create two Texture2D arrays from an array of `num` frame buffers.
   // The first texture array contains the depth images for each of the frame buffers.
   // The second texture array contains the color images for each of the frame buffers.
   std::pair<TextureArrayId, TextureArrayId> createDepthAndColorTextureArrayFromFrameBuffers(const FrameBufferId* fbids, int num, int texture_size);
 
 
-  TextureId createDepthTextureFromFrameBuffer(FrameBufferId fbid, int texture_size);
   // Attach shaders to the program and link the program.
   // Shaders need to have successfully compiled.
   // If link is successful, will return true.
@@ -117,6 +118,7 @@ class GLResourceManager {
   GLResourceManager() {}
   TextureId createTexture();
   TextureId createColorTextureFromFrameBuffer(FrameBufferId fbid, int texture_size);
+  TextureId createDepthTextureFromFrameBuffer(FrameBufferId fbid, int texture_size);
   std::unique_ptr<Cleanup> bindTexture(TextureId texid);
   std::unique_ptr<Cleanup> bindTextureArray(TextureArrayId texaid);
   std::unique_ptr<Cleanup> bindVertexBuffer(VertexBufferId vbid);

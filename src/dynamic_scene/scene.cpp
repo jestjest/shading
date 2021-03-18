@@ -137,11 +137,12 @@ Scene::Scene(std::vector<SceneObject*> argObjects,
     printf("Setting up ssao assets \n");
     viewTextureSize_ = 1024;
     gl_mgr_ = GLResourceManager::instance();
-    viewPosBuffer_ = gl_mgr_->createFrameBuffer();
+    viewPosBuffer_[0] = gl_mgr_->createFrameBuffer();
     checkGLError("after creating viewpos framebuffer");
-    viewPosTextureId_ = gl_mgr_->createDepthTextureFromFrameBuffer(viewPosBuffer_, viewTextureSize_);
+    std::tie(viewPosDepthTextureArrayId_, viewPosColorTextureArrayId_)
+        = gl_mgr_->createDepthAndColorTextureArrayFromFrameBuffers(viewPosBuffer_, 1, viewTextureSize_);
     checkGLError("after binding viewpos texture as attachment");
-    if (!gl_mgr_->checkFrameBuffer(viewPosBuffer_)) {
+    if (!gl_mgr_->checkFrameBuffer(viewPosBuffer_[0])) {
         exit(1);
     }
     printf("Done setting up viewpos assets\n");
@@ -277,7 +278,7 @@ void Scene::ssaoPass() {
     Matrix4x4 worldToCamera = createWorldToCameraMatrix(camera_->getPosition(), camera_->getViewPoint(), camera_->getUpDir());
     Matrix4x4 proj = createPerspectiveMatrix(camera_->getVFov(), camera_->getAspectRatio(), camera_->getNearClip(), camera_->getFarClip());  
 
-    auto fb_bind = gl_mgr_->bindFrameBuffer(viewPosBuffer_);
+    auto fb_bind = gl_mgr_->bindFrameBuffer(viewPosBuffer_[0]);
 
     glViewport(0, 0, viewTextureSize_, viewTextureSize_);
 

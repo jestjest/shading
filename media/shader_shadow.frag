@@ -19,10 +19,13 @@ uniform sampler2D diffuseTextureSampler;
 uniform sampler2D normalTextureSampler;
 uniform sampler2D environmentTextureSampler;
 uniform sampler2DArray shadowTextureArray;
-uniform sampler2D viewPosTextureSampler;
+uniform sampler2DArray viewPosTextureArray;
+uniform sampler2D ssaoNoiseTextureSampler;
 
 // ssao samples
 uniform vec3 samples[300];
+// tile noise texture over screen based on screen dimensions divided by noise size
+const vec2 noiseScale = vec2(600.0/4.0, 600.0/4.0); 
 int kernelSize = 300;
 float radius = 0.5;
 float bias = 0.025;
@@ -142,31 +145,42 @@ void main(void)
     float ambientOcclusion = 0.0;
     if (doSSAO) {
         vec4 viewPos = w2c * vec4(position, 1.0);
-        vec3 vp3 = viewPos.xyz / viewPos.w;
+        vec3 viewPos3 = viewPos.xyz / viewPos.w;
+        vec4 viewNormal = w2c * vec4(normal, 1.0);
+        vec3 viewNormal3 = viewNormal.xyz / viewNormal.w;
+
+        vec3 randomVec = normalize(texture(ssaoNoiseTextureSampler, texcoord * noiseScale).xyz);
+        // create TBN change-of-basis matrix: from tangent-space to view-space
+        vec3 tangent = normalize(randomVec - viewNormal3 * dot(randomVec, viewNormal3));
+        vec3 bitangent = cross(normal, tangent);
+        mat3 TBN = mat3(tangent, bitangent, normal);
+
         // iterate over the sample kernel and calculate occlusion factor
         for (int i = 0; i < kernelSize; ++i) {
             // get sample position
-            vec4 samplePos = w2c * vec4(tan2world * samples[i], 1.0); // from tangent to view-space
-            vec3 sp3 = samplePos.xyz / samplePos.w;
-            sp3 = vp3 + sp3 * radius; 
+            vec3 samplePos = TBN * samples[1];// from tangent to view-space
+            samplePos = viewPos3 + samplePos * radius; 
             
             // project sample position (to sample texture) (to get position on screen/texture)
-            vec4 offset = p * vec4(sp3, 1.0); // from view to clip-space
+            vec4 offset = p * vec4(samplePos, 1.0); // from view to clip-space
             offset /= offset.w; // perspective divide
             offset.xyz = offset.xyz * 0.5 + 0.5; // transform to range 0.0 - 1.0
             
             // get sample depth
-            float sampleDepth = texture(viewPosTextureSampler, offset.xy).x; // get depth value of kernel sample
+            float sampleDepth = texture(viewPosTextureArray, vec3(offset.xy, 0)).x; // get depth value of kernel sample
+            // fragColor = normalize(vec4(sampleDepth, 0, 0, 1));
+            // return;
             
             // range check & accumulate
-            float rangeCheck = smoothstep(0.0, 1.0, radius / abs(vp3.z - sampleDepth));
-            ambientOcclusion += (sampleDepth >= samplePos.z + bias ? 1.0 : 0.0) * rangeCheck;           
+            // float rangeCheck = smoothstep(0.0, 1.0, radius / abs(viewPos3.z - sampleDepth));
+            // ambientOcclusion += (sampleDepth <= samplePos.z + bias ? 1.0 : 0.0) * rangeCheck;           
 
-            // float rangeCheck= abs(pvp3.z - sampleDepth) < radius ? 1.0 : 0.0;
-            // ambientOcclusion += (sampleDepth <= offset.z + bias ? 1.0 : 0.0) * rangeCheck;
+            float rangeCheck = abs(viewPos3.z - sampleDepth) < radius ? 1.0 : 0.0;
+            ambientOcclusion += (sampleDepth <= samplePos.z + bias ? 1.0 : 0.0) * rangeCheck;
         }
         ambientOcclusion = 1.0 - (ambientOcclusion / kernelSize);
-        ambientOcclusion = normalize(vec4(ambientOcclusion, 0 , 0, 1)).x;
+        ambientOcclusion = bias + normalize(vec4(ambientOcclusion, 0 , 0, 1)).x;
+
     } else {
         ambientOcclusion = 1.0;
     }

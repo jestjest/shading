@@ -70,6 +70,8 @@ class Mesh : public SceneObject {
     TextureId environmentTextureId_;
 
     std::vector<Vector3D> ssaoKernel_;
+    std::vector<Vector3Df> ssaoNoise_;
+    TextureId noiseTextureId_;
 
     // will be passed as shader uniforms
     bool  doTextureMapping_;

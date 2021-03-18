@@ -253,7 +253,6 @@ Mesh::Mesh(Collada::PolymeshInfo& polyMesh, const Matrix4x4& transform) {
 
 
     // generate sample kernel
-    // ----------------------
     std::uniform_real_distribution<GLfloat> randomFloats(0.0, 1.0); // generates random floats between 0.0 and 1.0
     std::default_random_engine generator;
     for (unsigned int i = 0; i < 300; ++i)
@@ -268,6 +267,17 @@ Mesh::Mesh(Collada::PolymeshInfo& polyMesh, const Matrix4x4& transform) {
         sample *= scale;
         ssaoKernel_.push_back(sample);
     }
+
+	// generate noise texture
+    for (unsigned int i = 0; i < 16; i++) {
+        Vector3Df noise;
+		noise.x  = randomFloats(generator) * 2.0 - 1.0;
+		noise.y = randomFloats(generator) * 2.0 - 1.0;
+		noise.z = 0.0f; // rotate around z-axis (in tangent space)
+        ssaoNoise_.push_back(noise);
+    }
+
+	noiseTextureId_ = gl_mgr_->createTextureFromData((const float*)&ssaoNoise_[0], 4, 4);
 
 	//
 	// allocate the shader for this mesh
@@ -340,7 +350,9 @@ void Mesh::internalDraw(bool shadowPass, bool ssao, const Matrix4x4& proj, const
         viewShader->setMatrixParameter("m", objectToWorld);
         viewShader->setMatrixParameter("v", worldToCamera);
         viewShader->setMatrixParameter("p", proj);
+		viewShader->setVertexBuffer("vtx_normal", 3, normalBufferId_);
         viewShader->setVertexBuffer("vtx_position", 3, positionBufferId_);
+        viewShader->setMatrixParameter("obj2worldNorm", objectToWorldForNormals);
 
 		checkGLError("before glDrawArrays in ssao view pass");
         glDrawArrays(GL_TRIANGLES, 0, 3 * numTriangles_);
@@ -440,10 +452,10 @@ void Mesh::internalDraw(bool shadowPass, bool ssao, const Matrix4x4& proj, const
         // See shadow_viz.frag for an example of using texture arrays in the shader.
 		shader_->setTextureArraySampler("shadowTextureArray", scene_->getShadowTextureArrayId());
 
-		shader_->setTextureSampler("viewPosTextureSampler", scene_->getViewPosTextureId());
-
+		shader_->setTextureArraySampler("viewPosTextureArray", scene_->getViewPosTextureArrayId());
 		for (unsigned int i = 0; i < 64; ++i)
 			shader_->setVectorParameter("samples[" + std::to_string(i) + "]", ssaoKernel_[i]);
+		shader_->setTextureSampler("ssaoNoiseTextureSampler", noiseTextureId_);
 
 		// bind light parameters //////////////////////////////////
 
